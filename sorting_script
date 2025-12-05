@@ -1,0 +1,213 @@
+import base64
+import json
+import os
+import shutil
+import io
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import Image
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configuration
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+CLIENT = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
+
+# Directories
+DAMAGE_DIR = 'all_damages'
+INSPECTION_DIRS = [
+    'Inspection_Dec1',
+    'Inspection_Dec2',
+    'Inspection_Nov17',
+    'Inspection_Nov21'
+]
+OUTPUT_BASE = 'Timeline_Results'
+
+# Settings
+BATCH_SIZE = 30      
+MAX_THREADS = 10     
+MAX_RES = 1024       
+
+def resize_and_encode_image(image_path):
+    """Resizes image to save bandwidth and encodes to base64."""
+    try:
+        with Image.open(image_path) as img:
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
+            img.thumbnail((MAX_RES, MAX_RES))
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+            return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    except Exception as e:
+        print(f"Error encoding {image_path}: {e}")
+        return None
+
+def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num):
+    """
+    Sends Reference + Batch of Candidates to Gemini.
+    """
+    # 1. Encode Reference
+    ref_b64 = resize_and_encode_image(reference_path)
+    if not ref_b64: return []
+
+    messages_content = [
+        {
+            "type": "text",
+            "text": (
+                "You are a forensic image analyst performing strict object re-identification.\n"
+                "IMAGE 1 (The first image) is the REFERENCE DAMAGE photo focusing on a specific object or area.\n"
+                "The remaining images are CANDIDATE photos from other dates.\n\n"
+                "TASK: Identify which Candidate images clearly depict the EXACT SAME specific object or subject as the Reference Image.\n\n"
+                "CRITERIA FOR A MATCH:\n"
+                "1. The specific object (e.g., specific sink, specific window, specific patch of carpet) must be clearly visible.\n"
+                "2. You must be certain it is the same instance of the object, not just a similar object in the same room.\n"
+                "3. Wide shots are okay ONLY if the specific reference object is distinct and fully recognizable within the scene.\n\n"
+                "STRICT NEGATIVE CONSTRAINTS:\n"
+                "- DO NOT match based on shared background (e.g., same wallpaper or floor) if the main object is missing or different.\n"
+                "- DO NOT match if the object is heavily occluded, blurry, or only partially visible in the background.\n"
+                "- DO NOT match if you are unsure.\n\n"
+                "Return a JSON object with a list of the INDICES of the matching candidate images.\n"
+                "Note: The Reference image is Index 0. The first candidate image is Index 1.\n"
+                "Example JSON: {\"matches\": [1, 5, 12]}"
+            )
+        },
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{ref_b64}"}
+        }
+    ]
+
+    # 2. Encode Candidates
+    valid_candidates = []
+    for path in candidate_paths:
+        b64 = resize_and_encode_image(path)
+        if b64:
+            messages_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+            })
+            valid_candidates.append(path)
+
+    if not valid_candidates:
+        return []
+
+    # 3. Send to Gemini
+    try:
+        print(f"   🚀 [{damage_name}] Batch {batch_num}: Sending {len(valid_candidates)} images...")
+        
+        start_time = time.time()
+        response = CLIENT.chat.completions.create(
+            model="google/gemini-3-pro-preview",
+            messages=[{"role": "user", "content": messages_content}],
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+        duration = time.time() - start_time
+
+        result_text = response.choices[0].message.content
+        
+        # DEBUG PRINT: Show exactly what Gemini said
+        print(f"   📩 [{damage_name}] Batch {batch_num} Response ({duration:.1f}s): {result_text}")
+
+        if "```" in result_text:
+            result_text = result_text.replace("```json", "").replace("```", "")
+        
+        data = json.loads(result_text)
+        match_indices = data.get("matches", [])
+        
+        final_matches = []
+        for idx in match_indices:
+            list_index = idx - 1
+            if 0 <= list_index < len(valid_candidates):
+                final_matches.append(valid_candidates[list_index])
+        
+        return final_matches
+
+    except Exception as e:
+        print(f"   ⚠️ [{damage_name}] Batch {batch_num} API Error: {e}")
+        return []
+
+def process_damage_item(damage_file):
+    damage_path = os.path.join(DAMAGE_DIR, damage_file)
+    damage_filename = os.path.basename(damage_file)
+    damage_name_no_ext = os.path.splitext(damage_filename)[0]
+    
+    timeline_dir = os.path.join(OUTPUT_BASE, damage_name_no_ext)
+    os.makedirs(timeline_dir, exist_ok=True)
+    
+    shutil.copy2(damage_path, os.path.join(timeline_dir, f"REFERENCE_{damage_filename}"))
+    
+    print(f"🔎 STARTING: {damage_filename}")
+
+    # --- PHASE 1: EXACT FILENAME MATCHING ---
+    files_to_scan_visually = []
+    
+    for folder in INSPECTION_DIRS:
+        if not os.path.exists(folder):
+            continue
+            
+        potential_exact_path = os.path.join(folder, damage_filename)
+        if os.path.exists(potential_exact_path):
+            print(f"   ✨ [{damage_filename}] Found Exact Match in {folder}")
+            new_name = f"EXACT_MATCH_{folder}_{damage_filename}"
+            shutil.copy2(potential_exact_path, os.path.join(timeline_dir, new_name))
+        
+        for f in os.listdir(folder):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                full_path = os.path.join(folder, f)
+                if f != damage_filename:
+                    files_to_scan_visually.append(full_path)
+
+    # --- PHASE 2: VISUAL MATCHING (Gemini) ---
+    total_candidates = len(files_to_scan_visually)
+    
+    for i in range(0, total_candidates, BATCH_SIZE):
+        batch_num = i // BATCH_SIZE + 1
+        batch = files_to_scan_visually[i : i + BATCH_SIZE]
+        
+        matches = find_visual_matches(damage_path, batch, damage_filename, batch_num)
+        
+        if matches:
+            print(f"   ✅ [{damage_filename}] Batch {batch_num}: Found {len(matches)} matches")
+            for match_path in matches:
+                folder_name = os.path.basename(os.path.dirname(match_path))
+                file_name = os.path.basename(match_path)
+                new_name = f"{folder_name}_{file_name}"
+                shutil.copy2(match_path, os.path.join(timeline_dir, new_name))
+        else:
+            print(f"   ❌ [{damage_filename}] Batch {batch_num}: No matches found.")
+
+    print(f"🏁 FINISHED: {damage_filename}")
+    return damage_filename
+
+def main():
+    if not os.path.exists(DAMAGE_DIR):
+        print(f"Error: {DAMAGE_DIR} directory not found.")
+        return
+
+    damage_files = [f for f in os.listdir(DAMAGE_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    
+    print(f"Found {len(damage_files)} damage items.")
+    print(f"Processing with {MAX_THREADS} parallel threads (Verbose Mode).")
+    print("------------------------------------------------")
+    
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        futures = [executor.submit(process_damage_item, df) for df in damage_files]
+        
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception as e:
+                print(f"Thread generated an exception: {e}")
+
+    print("\n------------------------------------------------")
+    print(f"Done! Results are in '{OUTPUT_BASE}'")
+
+if __name__ == "__main__":
+    main()
