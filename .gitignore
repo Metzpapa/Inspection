@@ -1,0 +1,28 @@
+# --- Security (CRITICAL) ---
+.env
+
+# --- Python & System ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# --- The "Future-Proof" Image Block ---
+# This ignores these file types in ANY folder, subfolder, or future folder.
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.bmp
+*.tiff
+*.heic
+
+# --- Output & Data Directories ---
+# Ignore these folders entirely (even if they contain JSONs or text files)
+Sorted_Images/
+output_images/
+report_images/
+damage/
+inspection/
