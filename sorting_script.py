@@ -28,11 +28,24 @@ INSPECTION_DIRS = [
     'Inspection_Nov21'
 ]
 OUTPUT_BASE = 'Timeline_Results'
+LOG_FILE = 'completed_log.txt'  # <--- NEW: Tracks successfully finished files
 
 # Settings
 BATCH_SIZE = 30      
 MAX_THREADS = 10     
 MAX_RES = 1024       
+
+def load_completed_files():
+    """Reads the log file to find out which images are already done."""
+    if not os.path.exists(LOG_FILE):
+        return set()
+    with open(LOG_FILE, 'r') as f:
+        return set(line.strip() for line in f)
+
+def mark_as_completed(filename):
+    """Appends a filename to the log file."""
+    with open(LOG_FILE, 'a') as f:
+        f.write(f"{filename}\n")
 
 def resize_and_encode_image(image_path):
     """Resizes image to save bandwidth and encodes to base64."""
@@ -51,10 +64,11 @@ def resize_and_encode_image(image_path):
 def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num):
     """
     Sends Reference + Batch of Candidates to Gemini.
+    Returns: (matches_list, success_boolean)
     """
     # 1. Encode Reference
     ref_b64 = resize_and_encode_image(reference_path)
-    if not ref_b64: return []
+    if not ref_b64: return [], False
 
     messages_content = [
         {
@@ -71,7 +85,7 @@ def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num)
                 "STRICT NEGATIVE CONSTRAINTS:\n"
                 "- DO NOT match based on shared background (e.g., same wallpaper or floor) if the main object is missing or different.\n"
                 "- DO NOT match if the object is heavily occluded, blurry, or only partially visible in the background.\n"
-                "- DO NOT match if you are unsure.\n\n"
+                "- DO NOT match if the object is generic (like a plain white wall) unless there are identifying marks.\n\n"
                 "Return a JSON object with a list of the INDICES of the matching candidate images.\n"
                 "Note: The Reference image is Index 0. The first candidate image is Index 1.\n"
                 "Example JSON: {\"matches\": [1, 5, 12]}"
@@ -95,7 +109,7 @@ def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num)
             valid_candidates.append(path)
 
     if not valid_candidates:
-        return []
+        return [], True # No candidates is technically a success (nothing to check)
 
     # 3. Send to Gemini
     try:
@@ -112,7 +126,7 @@ def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num)
 
         result_text = response.choices[0].message.content
         
-        # DEBUG PRINT: Show exactly what Gemini said
+        # DEBUG PRINT
         print(f"   📩 [{damage_name}] Batch {batch_num} Response ({duration:.1f}s): {result_text}")
 
         if "```" in result_text:
@@ -127,11 +141,11 @@ def find_visual_matches(reference_path, candidate_paths, damage_name, batch_num)
             if 0 <= list_index < len(valid_candidates):
                 final_matches.append(valid_candidates[list_index])
         
-        return final_matches
+        return final_matches, True # Success
 
     except Exception as e:
         print(f"   ⚠️ [{damage_name}] Batch {batch_num} API Error: {e}")
-        return []
+        return [], False # Failure
 
 def process_damage_item(damage_file):
     damage_path = os.path.join(DAMAGE_DIR, damage_file)
@@ -166,12 +180,17 @@ def process_damage_item(damage_file):
 
     # --- PHASE 2: VISUAL MATCHING (Gemini) ---
     total_candidates = len(files_to_scan_visually)
+    all_batches_successful = True # Track if any batch fails
     
     for i in range(0, total_candidates, BATCH_SIZE):
         batch_num = i // BATCH_SIZE + 1
         batch = files_to_scan_visually[i : i + BATCH_SIZE]
         
-        matches = find_visual_matches(damage_path, batch, damage_filename, batch_num)
+        matches, success = find_visual_matches(damage_path, batch, damage_filename, batch_num)
+        
+        if not success:
+            all_batches_successful = False
+            print(f"   🛑 [{damage_filename}] Batch {batch_num} FAILED. Will not mark file as complete.")
         
         if matches:
             print(f"   ✅ [{damage_filename}] Batch {batch_num}: Found {len(matches)} matches")
@@ -180,10 +199,15 @@ def process_damage_item(damage_file):
                 file_name = os.path.basename(match_path)
                 new_name = f"{folder_name}_{file_name}"
                 shutil.copy2(match_path, os.path.join(timeline_dir, new_name))
-        else:
+        elif success:
             print(f"   ❌ [{damage_filename}] Batch {batch_num}: No matches found.")
 
-    print(f"🏁 FINISHED: {damage_filename}")
+    if all_batches_successful:
+        print(f"🏁 FINISHED SUCCESS: {damage_filename}")
+        mark_as_completed(damage_filename)
+    else:
+        print(f"⚠️ FINISHED WITH ERRORS: {damage_filename} (Will retry next run)")
+    
     return damage_filename
 
 def main():
@@ -191,14 +215,20 @@ def main():
         print(f"Error: {DAMAGE_DIR} directory not found.")
         return
 
-    damage_files = [f for f in os.listdir(DAMAGE_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    # Load completed files
+    completed_files = load_completed_files()
     
-    print(f"Found {len(damage_files)} damage items.")
-    print(f"Processing with {MAX_THREADS} parallel threads (Verbose Mode).")
+    # Filter damage files
+    all_damage_files = [f for f in os.listdir(DAMAGE_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    files_to_process = [f for f in all_damage_files if f not in completed_files]
+    
+    print(f"Found {len(all_damage_files)} total damage items.")
+    print(f"Skipping {len(completed_files)} already completed.")
+    print(f"Processing {len(files_to_process)} items with {MAX_THREADS} threads.")
     print("------------------------------------------------")
     
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = [executor.submit(process_damage_item, df) for df in damage_files]
+        futures = [executor.submit(process_damage_item, df) for df in files_to_process]
         
         for future in as_completed(futures):
             try:
