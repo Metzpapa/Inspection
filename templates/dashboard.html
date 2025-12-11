@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspection Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0d10;
+            --panel: #11141b;
+            --muted: #8ea0b7;
+            --ink: #e9ecf2;
+            --border: #1d2430;
+            --accent: #d6ff7f;
+            --warn: #f05d6c;
+            --ok: #53c7a1;
+            --mid: #f0c35d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+            background: radial-gradient(140% 140% at 10% 20%, rgba(214, 255, 127, 0.12), transparent), var(--bg);
+            color: var(--ink);
+            min-height: 100vh;
+        }
+        a { color: inherit; }
+        .page { max-width: 1280px; margin: 0 auto; padding: 32px 18px 120px; }
+        .hero { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+        .title { font-size: 1.9rem; font-weight: 600; letter-spacing: 2px; }
+        .subtitle { color: var(--muted); max-width: 640px; line-height: 1.5; }
+        .badges { display: flex; flex-wrap: wrap; gap: 10px; }
+        .pill {
+            display: inline-flex; align-items: center; gap: 8px;
+            border: 1px solid var(--border); padding: 8px 12px; border-radius: 999px;
+            background: rgba(255,255,255,0.03); color: var(--muted); font-weight: 600; font-size: 0.9rem;
+        }
+        .pill strong { color: var(--ink); }
+        .tabs { display: flex; gap: 10px; margin: 10px 0 18px; flex-wrap: wrap; }
+        .tab-btn {
+            border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+            color: var(--ink); padding: 12px 16px; border-radius: 12px; cursor: pointer;
+            font-weight: 600; letter-spacing: 0.5px; transition: all 0.2s ease;
+        }
+        .tab-btn.active { background: var(--panel); border-color: var(--accent); color: var(--accent); }
+        .panel { display: none; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 22px; }
+        .panel.active { display: block; }
+        .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+        .panel-title { font-size: 1.2rem; font-weight: 600; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+        .card {
+            border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+            background: rgba(255,255,255,0.02); display: flex; flex-direction: column; min-height: 100%;
+        }
+        .img-wrap { position: relative; width: 100%; padding-top: 64%; background: #0f1218; }
+        .img-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .tag {
+            position: absolute; top: 12px; left: 12px; padding: 6px 10px; border-radius: 10px;
+            font-weight: 600; font-size: 0.8rem; color: #0b0d10; background: var(--accent);
+        }
+        .card-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+        .card-title { font-weight: 600; }
+        .meta { color: var(--muted); font-size: 0.9rem; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+        .btn {
+            border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--ink);
+            padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; flex: 1;
+            min-width: 120px; transition: all 0.2s ease;
+        }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.ok { border-color: rgba(83,199,161,0.4); color: var(--ok); }
+        .btn.danger { border-color: rgba(240,93,108,0.5); color: var(--warn); }
+        .btn.secondary { color: var(--muted); }
+        textarea, input, select {
+            width: 100%; background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            border-radius: 10px; padding: 10px 12px; color: var(--ink); font-family: inherit; font-size: 0.95rem;
+        }
+        textarea { min-height: 80px; resize: vertical; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.5px; }
+        .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .empty { border: 1px dashed var(--border); border-radius: 12px; padding: 30px; text-align: center; color: var(--muted); }
+        .export-wrap { display: grid; grid-template-columns: 1fr; gap: 14px; }
+        .export-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+        .iframe-shell { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #0f1218; min-height: 60vh; }
+        iframe { width: 100%; height: 100%; border: none; background: #0f1218; }
+        .toast {
+            position: fixed; right: 20px; bottom: 20px; background: rgba(83,199,161,0.12);
+            color: var(--ink); border: 1px solid rgba(83,199,161,0.5); padding: 12px 14px;
+            border-radius: 10px; opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        @media (max-width: 720px) {
+            .panel { padding: 16px; }
+            .card-grid { grid-template-columns: 1fr; }
+            .hero { align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="hero">
+            <div>
+                <div class="title">Inspection Console</div>
+                <div class="subtitle">Triage AI findings, refine recommendations, and export a client-ready HTML report without copying or moving image files.</div>
+            </div>
+            <div class="badges">
+                <div class="pill">Pending: <strong id="count-pending">0</strong></div>
+                <div class="pill">Approved: <strong id="count-approved">0</strong></div>
+                <div class="pill">Rejected: <strong id="count-rejected">0</strong></div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="review">Review (Triage)</button>
+            <button class="tab-btn" data-tab="edit">Edit (Refine)</button>
+            <button class="tab-btn" data-tab="export">Export (Finalize)</button>
+        </div>
+
+        <section id="panel-review" class="panel active">
+            <div class="panel-head">
+                <div class="panel-title">Review pending items</div>
+                <div class="meta">Approve items you want to refine later or reject to drop them from the flow.</div>
+            </div>
+            <div id="review-list" class="card-grid"></div>
+            <div id="review-empty" class="empty" style="display:none;">No pending items. Great job.</div>
+        </section>
+
+        <section id="panel-edit" class="panel">
+            <div class="panel-head">
+                <div class="panel-title">Edit approved items</div>
+                <div class="meta">Adjust descriptions, add action items, and set importance. Use undo to return to review or reject.</div>
+            </div>
+            <div id="edit-list" class="card-grid"></div>
+            <div id="edit-empty" class="empty" style="display:none;">Approve items to start refining them.</div>
+        </section>
+
+        <section id="panel-export" class="panel">
+            <div class="panel-head">
+                <div class="panel-title">Finalize &amp; export</div>
+                <div class="meta">Preview the live HTML report built from your approved set.</div>
+            </div>
+            <div class="export-wrap">
+                <div class="export-controls">
+                    <div class="badges">
+                        <div class="pill">Report items: <strong id="count-report">0</strong></div>
+                    </div>
+                    <div class="actions" style="flex:0 0 auto;">
+                        <button class="btn ok" onclick="downloadReport()">Download HTML Report</button>
+                        <button class="btn secondary" onclick="refreshData()">Refresh preview</button>
+                    </div>
+                </div>
+                <div class="iframe-shell">
+                    <iframe id="export-frame" title="Report Preview"></iframe>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast">Saved</div>
+
+    <script>
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const panels = {
+            review: document.getElementById('panel-review'),
+            edit: document.getElementById('panel-edit'),
+            export: document.getElementById('panel-export'),
+        };
+
+        let state = [];
+        let activeTab = 'review';
+        let debounceTimers = {};
+
+        tabButtons.forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+
+        function setTab(tab) {
+            activeTab = tab;
+            tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            Object.entries(panels).forEach(([key, el]) => el.classList.toggle('active', key === tab));
+            if (tab === 'export') {
+                loadExportPreview();
+            }
+        }
+
+        async function loadData() {
+            const res = await fetch('/api/data');
+            state = await res.json();
+            render();
+        }
+
+        function render() {
+            renderCounts();
+            renderReview();
+            renderEdit();
+            if (activeTab === 'export') {
+                loadExportPreview();
+            }
+        }
+
+        function renderCounts() {
+            const pending = state.filter(i => i.status === 'pending').length;
+            const approved = state.filter(i => i.status === 'approved').length;
+            const rejected = state.filter(i => i.status === 'rejected').length;
+            document.getElementById('count-pending').innerText = pending;
+            document.getElementById('count-approved').innerText = approved;
+            document.getElementById('count-rejected').innerText = rejected;
+            document.getElementById('count-report').innerText = approved;
+        }
+
+        function imageSrc(path) {
+            return '/files/' + encodeURI(path);
+        }
+
+        function renderReview() {
+            const container = document.getElementById('review-list');
+            const empty = document.getElementById('review-empty');
+            const items = state.filter(i => i.status === 'pending');
+            empty.style.display = items.length ? 'none' : 'block';
+            container.innerHTML = items.map(item => `
+                <article class="card">
+                    <div class="img-wrap">
+                        <span class="tag">${item.severity || 'n/a'}</span>
+                        <img src="${imageSrc(item.image_path)}" alt="${item.filename}" loading="lazy">
+                    </div>
+                    <div class="card-body">
+                        <div class="card-title">${item.task || item.task_derived || item.filename}</div>
+                        <div class="meta">${item.description || 'No description provided.'}</div>
+                        <div class="actions">
+                            <button class="btn danger" onclick="updateStatus('${item.id}', 'rejected')">Reject</button>
+                            <button class="btn ok" onclick="updateStatus('${item.id}', 'approved')">Approve</button>
+                        </div>
+                    </div>
+                </article>
+            `).join('');
+        }
+
+        function renderEdit() {
+            const container = document.getElementById('edit-list');
+            const empty = document.getElementById('edit-empty');
+            const items = state.filter(i => i.status === 'approved');
+            empty.style.display = items.length ? 'none' : 'block';
+            container.innerHTML = items.map(item => `
+                <article class="card">
+                    <div class="img-wrap">
+                        <span class="tag">${(item.importance || 'low')}</span>
+                        <img src="${imageSrc(item.image_path)}" alt="${item.filename}" loading="lazy">
+                    </div>
+                    <div class="card-body">
+                        <div class="card-title">${item.folder}</div>
+                        <div class="field">
+                            <label>Description</label>
+                            <textarea oninput="queueUpdate('${item.id}', 'description', this.value)">${item.description || ''}</textarea>
+                        </div>
+                        <div class="field">
+                            <label>Task</label>
+                            <input type="text" value="${item.task || ''}" oninput="queueUpdate('${item.id}', 'task', this.value)" placeholder="e.g., Replace filters, schedule service visit">
+                        </div>
+                        <div class="split">
+                            <div class="field">
+                                <label>Importance</label>
+                                <select onchange="queueUpdate('${item.id}', 'importance', this.value)">
+                                    ${['low','medium','high'].map(opt => `<option value="${opt}" ${opt === (item.importance || 'low') ? 'selected' : ''}>${opt.charAt(0).toUpperCase() + opt.slice(1)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Status</label>
+                                <select onchange="updateStatus('${item.id}', this.value)">
+                                    ${['approved','pending','rejected'].map(opt => `<option value="${opt}" ${opt === item.status ? 'selected' : ''}>${opt}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn secondary" onclick="updateStatus('${item.id}', 'pending')">Send to Review</button>
+                            <button class="btn danger" onclick="updateStatus('${item.id}', 'rejected')">Reject</button>
+                            <button class="btn ok" onclick="saveCurrent('${item.id}')">Save now</button>
+                        </div>
+                    </div>
+                </article>
+            `).join('');
+        }
+
+        function queueUpdate(id, field, value) {
+            const key = `${id}-${field}`;
+            clearTimeout(debounceTimers[key]);
+            debounceTimers[key] = setTimeout(() => updateItem(id, { [field]: value }), 400);
+            const item = state.find(i => i.id === id);
+            if (item) { item[field] = value; }
+        }
+
+        async function updateStatus(id, status) {
+            await updateItem(id, { status });
+        }
+
+        async function updateItem(id, updates) {
+            const res = await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, ...updates })
+            });
+            if (!res.ok) {
+                console.error(await res.text());
+                return;
+            }
+            const result = await res.json();
+            if (result.item) {
+                state = state.map(it => it.id === id ? result.item : it);
+            }
+            renderCounts();
+            flashSaved();
+        }
+
+        function saveCurrent(id) {
+            const item = state.find(it => it.id === id);
+            if (!item) return;
+            updateItem(id, {
+                description: item.description || '',
+                task: item.task || '',
+                importance: item.importance || 'low',
+                status: item.status || 'approved'
+            });
+        }
+
+        function flashSaved() {
+            const toast = document.getElementById('toast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 800);
+        }
+
+        async function loadExportPreview() {
+            const res = await fetch('/export');
+            const html = await res.text();
+            document.getElementById('export-frame').srcdoc = html;
+        }
+
+        function downloadReport() {
+            window.open('/export?download=1', '_blank');
+        }
+
+        function refreshData() {
+            loadData();
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

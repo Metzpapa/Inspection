@@ -1,0 +1,155 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rove Property Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0a0a0a; --card: #141414; --text: #fff; --muted: #888; --border: #2a2a2a; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+        
+        .navbar { padding: 25px 50px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.2rem; letter-spacing: 3px; text-transform: uppercase; }
+        .date { color: var(--muted); font-size: 0.9rem; border: 1px solid var(--border); padding: 5px 15px; border-radius: 20px; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 60px 20px; }
+        
+        .hero { text-align: center; margin-bottom: 80px; }
+        .hero h1 { font-size: 3rem; font-weight: 300; margin-bottom: 15px; }
+        .hero p { color: var(--muted); font-size: 1.1rem; }
+
+        .section-title { font-size: 1.4rem; font-weight: 400; margin: 60px 0 30px; padding-bottom: 15px; border-bottom: 1px solid var(--border); }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 40px; }
+        
+        .card { background: transparent; display: flex; flex-direction: column; }
+        .card-img { width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 4px; margin-bottom: 20px; background: #222; cursor: pointer; }
+        
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+        .badge.critical { background: #ff4d4d; color: white; }
+        .badge.high { background: #ff9f43; color: white; }
+        .badge.medium { background: #feca57; color: black; }
+        .badge.low { background: #2a2a2a; color: #ccc; border: 1px solid #444; }
+
+        .desc { font-size: 1rem; margin-bottom: 15px; color: #eee; }
+        
+        .task-box { background: #1a1a1a; padding: 15px; border-radius: 4px; border-left: 2px solid #fff; }
+        .task-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); letter-spacing: 1px; margin-bottom: 5px; }
+        .task-text { font-size: 0.9rem; color: #fff; }
+
+        /* Modal */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); }
+        .modal-content { max-width: 90%; max-height: 90vh; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .close { position: absolute; top: 30px; right: 50px; color: #fff; font-size: 40px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">ROVE</div>
+        <div class="date">December 10, 2025</div>
+    </nav>
+
+    <div class="container">
+        <div class="hero">
+            <h1>Inspection Report</h1>
+            <p>Action items and observations from recent property inspection.</p>
+        </div>
+    <div class="section-title">8 Barnes Avenue Nov 30 Clean</div><div class="grid">
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 30 Clean/Take a photo of the entire RoomReference 1 (3).jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge severe">severe Importance</span>
+                </div>
+                <div class="desc">Exposed electrical wiring and outlet on the wall next to the TV stand.</div>
+                
+            </div>
+            
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 30 Clean/If applicable take a photo of the poolReference.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">Pool cover </div>
+                
+            </div>
+            </div><div class="section-title">8 Barnes Avenue Nov 3 Clean</div><div class="grid">
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Clean/If applicable  take a photo of the pool 1.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">The pool cover is torn and appears to be damaged in multiple areas, causing debris and water to collect on the cover.</div>
+                
+            </div>
+            
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Clean/Confirm if the Pool is clean.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">Pool/Pool Cover is not clean</div>
+                
+            </div>
+            
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Clean/Take photo of the Wardrobe (2).jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge minor">minor Importance</span>
+                </div>
+                <div class="desc">There is a crack in the bottom right corner of the wardrobe.</div>
+                
+            </div>
+            
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Clean/Take photo of the Wardrobe 2.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">One of the wardrobe doors is detached and leaning against the main unit.</div>
+                
+            </div>
+            </div><div class="section-title">8 Barnes Avenue Nov 3 Inspection</div><div class="grid">
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Inspection/- battery door locks lock handles.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge high">high Importance</span>
+                </div>
+                <div class="desc">There are white stains on the lock around the keyhole and below the keypad. There are also scratches on the edges of the keypad frame.</div>
+                
+                <div class="task-box">
+                    <div class="task-label">Recommended Task</div>
+                    <div class="task-text">Replace lock batteries</div>
+                </div>
+                
+            </div>
+            
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Nov 3 Inspection/- Internet location system provider access points.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">The internet location system provider access points show clear signs of significant physical damage, including paint/debris splatters, scuffs, and impact marks on their surfaces, indicating mishandling or exposure to a harsh environment.</div>
+                
+            </div>
+            </div><div class="section-title">8 Barnes Avenue Dec 1 Inspection</div><div class="grid">
+            <div class="card">
+                <img src="Reviewed_Inspection_Report/8 Barnes Avenue Dec 1 Inspection/- Internet location system provider access points.jpg" class="card-img" onclick="openModal(this.src)">
+                <div>
+                    <span class="badge moderate">moderate Importance</span>
+                </div>
+                <div class="desc">One of the Internet location system provider access points, specifically the black box on the back, shows significant physical damage. There are visible white, crusty stains or residue extensively covering its sides, suggesting either severe exposure to an damaging substance that has hardened on its surface or significant material degradation/damage.</div>
+                
+            </div>
+            </div>
+    </div>
+    <div id="imageModal" class="modal"><span class="close" onclick="document.getElementById('imageModal').style.display='none'">&times;</span><img class="modal-content" id="modalImage"></div>
+    <script>
+        function openModal(src) { document.getElementById('imageModal').style.display='block'; document.getElementById('modalImage').src=src; }
+        window.onclick = function(e) { if(e.target == document.getElementById('imageModal')) document.getElementById('imageModal').style.display='none'; }
+    </script>
+</body>
+</html>
+    

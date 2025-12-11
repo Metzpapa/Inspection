@@ -2,7 +2,6 @@ import base64
 import json
 import os
 import re
-from collections import defaultdict
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -32,73 +31,62 @@ INSPECTION_FOLDERS = [
 OUTPUT_DIR = 'Analysis_Results'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def normalize_filename(filename):
+def get_task_from_filename(filename):
     """
-    Extract base name from filename by removing prefixes, numbers, and extensions.
-    Examples:
-        "- TVs remotes apple box eeros etc 1.jpg" -> "tvs remotes apple box eeros etc"
-        "- Audio system brand speaker locations controller.jpg" -> "audio system brand speaker locations controller"
+    Converts a filename into a readable task description.
+    Example: "- Audio system brand speaker locations... 1.jpg" -> "Audio system brand speaker locations"
     """
     # Remove extension
     name = os.path.splitext(filename)[0]
-
     # Remove leading dash and spaces
     name = re.sub(r'^-\s*', '', name)
-
     # Remove trailing numbers (e.g., " 1", " 2", etc.)
     name = re.sub(r'\s+\d+$', '', name)
-
     # Remove parentheses with numbers (e.g., " (1)", " (2)")
     name = re.sub(r'\s*\(\d+\)$', '', name)
-
-    # Lowercase and strip for consistent matching
-    return name.lower().strip()
+    
+    return name.strip()
 
 def encode_image(image_path):
     """Encode image to base64."""
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-def analyze_photo_group(group_name, photo_paths):
+def analyze_single_image(image_path):
     """
-    Send a group of photos to Gemini for analysis.
-    Returns: dict with analysis results
+    Send a single photo to Gemini to verify the task based on filename.
     """
-    print(f"\n{'='*80}")
-    print(f"📤 Sending to Gemini: '{group_name}'")
-    print(f"   Photos in group ({len(photo_paths)}):")
-    for path in photo_paths:
-        folder = os.path.basename(os.path.dirname(path))
-        filename = os.path.basename(path)
-        print(f"      - [{folder}] {filename}")
-    print(f"{'='*80}\n")
+    filename = os.path.basename(image_path)
+    folder_name = os.path.basename(os.path.dirname(image_path))
+    task_name = get_task_from_filename(filename)
+
+    print(f"Processing: [{folder_name}] {filename}")
+    print(f"   ↳ Task: {task_name}")
 
     try:
-        # Build message content
-        if len(photo_paths) == 1:
-            prompt_text = (
-                "You are a property manager. Would a guest be unhappy seeing this?\n"
-                "Flag anything that looks bad: damage, mess, poorly made beds, dirty areas, broken items, stains, etc.\n\n"
-                "Return JSON: {\"has_issues\": true/false, \"description\": \"what's wrong\", "
-                "\"severity\": \"none/minor/moderate/severe\"}"
-            )
-        else:
-            prompt_text = (
-                "You are a property manager. These photos show the same area across different dates.\n"
-                "Flag anything a guest wouldn't want to see: damage, mess, poorly made beds, dirty areas, broken items, stains, etc.\n\n"
-                "Return JSON: {\"has_issues\": true/false, \"description\": \"what's wrong\", "
-                "\"severity\": \"none/minor/moderate/severe\", \"changes_over_time\": \"any changes or 'none'\"}"
-            )
+        # Prompt construction
+        prompt_text = (
+            f"Examine this photo for physical damages only. The item being inspected is: '{task_name}'.\n\n"
+            f"STRICT REQUIREMENTS:\n"
+            f"- ONLY flag 'has_issues' as true if there is visible physical damage (cracks, breaks, dents, scratches, "
+            f"tears, stains that indicate damage, missing parts, structural issues, etc.).\n"
+            f"- Do NOT flag normal wear, minor cosmetic imperfections, or general condition issues.\n"
+            f"- Do NOT flag cleanliness, messes, or task completion status.\n"
+            f"- Be very strict: only clear, obvious physical damage should be flagged.\n"
+            f"- If there is any doubt or the damage is minimal/normal wear, mark 'has_issues' as false.\n\n"
+            f"Return JSON: {{\"has_issues\": true/false, \"description\": \"short explanation\", "
+            f"\"severity\": \"none/minor/moderate/severe\"}}"
+        )
 
-        content = [{"type": "text", "text": prompt_text}]
-
-        # Add all images
-        for path in photo_paths:
-            base64_image = encode_image(path)
-            content.append({
+        base64_image = encode_image(image_path)
+        
+        content = [
+            {"type": "text", "text": prompt_text},
+            {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
-            })
+            }
+        ]
 
         # Call Gemini
         response = CLIENT.chat.completions.create(
@@ -109,40 +97,35 @@ def analyze_photo_group(group_name, photo_paths):
 
         result_text = response.choices[0].message.content
 
-        # Clean up response
+        # Clean up response if markdown is present
         if "```json" in result_text:
             result_text = result_text.replace("```json", "").replace("```", "")
 
         result = json.loads(result_text)
 
-        # Print result
+        # Print result to console
         has_issues = result.get("has_issues", False)
         severity = result.get("severity", "unknown")
         description = result.get("description", "No description")
 
         if has_issues:
-            print(f"🔴 ISSUES FOUND ({severity.upper()}): {description}")
+            print(f"   🔴 ISSUE FOUND ({severity.upper()}): {description}")
         else:
-            print(f"🟢 NO ISSUES: {description}")
-
-        if len(photo_paths) > 1:
-            changes = result.get("changes_over_time", "none")
-            if changes.lower() != "none":
-                print(f"📊 Changes over time: {changes}")
+            print(f"   🟢 OK")
 
         return {
-            "group_name": group_name,
-            "photo_paths": photo_paths,
-            "result": result
+            "folder": folder_name,
+            "filename": filename,
+            "task_derived": task_name,
+            "analysis": result
         }
 
     except Exception as e:
-        print(f"❌ Error analyzing group '{group_name}': {e}")
+        print(f"   ❌ Error analyzing image: {e}")
         return None
 
 def save_result(result, output_file):
     """Append a single result to the JSON file."""
-    # Load existing results
     if os.path.exists(output_file):
         with open(output_file, 'r') as f:
             try:
@@ -152,59 +135,54 @@ def save_result(result, output_file):
     else:
         all_results = []
 
-    # Append new result
     all_results.append(result)
 
-    # Write back
     with open(output_file, 'w') as f:
         json.dump(all_results, f, indent=2)
 
 def main():
-    print("🔍 Scanning inspection/clean folders...\n")
+    print("🔍 Starting Individual Image Analysis...\n")
+    
+    output_file = os.path.join(OUTPUT_DIR, 'analysis_results.json')
+    
+    # Clear previous results file if you want a fresh start, otherwise it appends
+    if os.path.exists(output_file):
+        os.remove(output_file)
 
-    # Step 1: Collect all photos and group by base name
-    photo_groups = defaultdict(list)
+    total_images = 0
+    issues_found = 0
 
     for folder in INSPECTION_FOLDERS:
         if not os.path.exists(folder):
             print(f"⚠️  Folder not found: {folder}")
             continue
 
+        # Get all images in folder
         files = [f for f in os.listdir(folder) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
-        print(f"📁 {folder}: {len(files)} photos")
+        files.sort() # Sort alphabetically
+
+        print(f"\n📂 Entering Folder: {folder} ({len(files)} images)")
 
         for filename in files:
-            base_name = normalize_filename(filename)
             full_path = os.path.join(folder, filename)
-            photo_groups[base_name].append(full_path)
+            
+            # Analyze
+            result = analyze_single_image(full_path)
+            
+            if result:
+                save_result(result, output_file)
+                total_images += 1
+                if result['analysis'].get('has_issues', False):
+                    issues_found += 1
 
-    print(f"\n✅ Found {len(photo_groups)} unique photo groups")
-    print(f"📊 Total photos: {sum(len(paths) for paths in photo_groups.values())}\n")
-
-    # Step 2: Analyze each group and save as we go
-    output_file = os.path.join(OUTPUT_DIR, 'analysis_results.json')
-    issues_found = 0
-    total_analyzed = 0
-
-    for idx, (base_name, photo_paths) in enumerate(photo_groups.items(), 1):
-        print(f"\n[{idx}/{len(photo_groups)}] Processing group...")
-
-        result = analyze_photo_group(base_name, photo_paths)
-        if result:
-            save_result(result, output_file)
-            total_analyzed += 1
-            if result['result'].get('has_issues', False):
-                issues_found += 1
-
-    # Step 3: Summary
+    # Summary
     print(f"\n{'='*80}")
     print(f"✅ Analysis complete! Results saved to: {output_file}")
-    print(f"{'='*80}\n")
-
+    print(f"{'='*80}")
     print(f"📊 SUMMARY:")
-    print(f"   Total groups analyzed: {total_analyzed}")
-    print(f"   Groups with issues: {issues_found}")
-    print(f"   Groups without issues: {total_analyzed - issues_found}")
+    print(f"   Total images analyzed: {total_images}")
+    print(f"   Images with issues:    {issues_found}")
+    print(f"   Images passed:         {total_images - issues_found}")
 
 if __name__ == "__main__":
     main()
